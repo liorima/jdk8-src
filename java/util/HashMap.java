@@ -377,11 +377,14 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     static final int tableSizeFor(int cap) {
         int n = cap - 1;
+        // | 按位或（一个为真即为真）
+        // >>> 带符号右移，负数高位补 1，正数高位补 0
         n |= n >>> 1;
         n |= n >>> 2;
         n |= n >>> 4;
         n |= n >>> 8;
         n |= n >>> 16;
+        // 扩容门槛为传入的初始容量往上取最近的2的n次方，比如7，最近的2的n次方是8
         return (n < 0) ? 1 : (n >= MAXIMUM_CAPACITY) ? MAXIMUM_CAPACITY : n + 1;
     }
 
@@ -454,6 +457,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
             throw new IllegalArgumentException("Illegal load factor: " +
                                                loadFactor);
         this.loadFactor = loadFactor;
+        // 计算扩容门槛
         this.threshold = tableSizeFor(initialCapacity);
     }
 
@@ -609,6 +613,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      *         previously associated <tt>null</tt> with <tt>key</tt>.)
      */
     public V put(K key, V value) {
+        //
         return putVal(hash(key), key, value, false, true);
     }
 
@@ -625,43 +630,68 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
                    boolean evict) {
         Node<K,V>[] tab; Node<K,V> p; int n, i;
+        // 如果table为null或长度为0，通过resize将table和n初始化
         if ((tab = table) == null || (n = tab.length) == 0)
             n = (tab = resize()).length;
+        // (n - 1) & hash 计算元素在哪个桶中
+        // 如果这个桶中还没有元素，则将这个元素放在桶中的第一个位置
         if ((p = tab[i = (n - 1) & hash]) == null)
             tab[i] = newNode(hash, key, value, null);
         else {
             Node<K,V> e; K k;
+            // p 不为空
+            // 通过key和hash判断p和即将插入的元素的key是不是相同
+            // 如果相同，将p赋值给e，用于后续判断及赋值
             if (p.hash == hash &&
                 ((k = p.key) == key || (key != null && key.equals(k))))
                 e = p;
             else if (p instanceof TreeNode)
+                // 如果p是一个树节点，则调用putTreeVal插入元素
                 e = ((TreeNode<K,V>)p).putTreeVal(this, tab, hash, key, value);
             else {
+                // 无限循环，直至满足条件后break
                 for (int binCount = 0; ; ++binCount) {
                     if ((e = p.next) == null) {
+                        // 如果已经是链表的最后一个节点，将新值插入到链表的尾部
                         p.next = newNode(hash, key, value, null);
+                        // -1是因为，第一个元素不会走这个else，因此binCount并没有加上第一个元素
+                        // 如果链表的长度达到树化的阀值，进行树化
                         if (binCount >= TREEIFY_THRESHOLD - 1) // -1 for 1st
                             treeifyBin(tab, hash);
                         break;
                     }
                     if (e.hash == hash &&
                         ((k = e.key) == key || (key != null && key.equals(k))))
+                        // 在链表中找到了相同的key，直接break，后面再去处理
                         break;
+                    // 此时e是p的next节点
+                    // p = e即相当于p = p.next
                     p = e;
                 }
             }
+            // map中存在相同的key
             if (e != null) { // existing mapping for key
                 V oldValue = e.value;
+                // 判断是否替换value
+                // hashmap的put方法中，onlyIfAbsent写死false
+                // 所以一定会替换值
                 if (!onlyIfAbsent || oldValue == null)
                     e.value = value;
+                // 在节点被访问后做点什么事，在LinkedHashMap中用到
                 afterNodeAccess(e);
+                // 有旧值，返回旧值
                 return oldValue;
             }
         }
+        // 走到这里说明插入的元素在map中没有找到相同的key
+        // 修改次数+1
         ++modCount;
+        // map中的size大于扩容阀值，进行resize
         if (++size > threshold)
             resize();
+        // 在节点插入后做点什么事，在LinkedHashMap中用到
         afterNodeInsertion(evict);
+        // 没有旧值，返回null
         return null;
     }
 
@@ -680,20 +710,28 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         int oldThr = threshold;
         int newCap, newThr = 0;
         if (oldCap > 0) {
+            // 如果旧的容量>=最大值，则新容量仍然是最大值
+            // 并直接返回旧的table
             if (oldCap >= MAXIMUM_CAPACITY) {
                 threshold = Integer.MAX_VALUE;
                 return oldTab;
             }
             else if ((newCap = oldCap << 1) < MAXIMUM_CAPACITY &&
                      oldCap >= DEFAULT_INITIAL_CAPACITY)
+                // 如果扩容2倍后，capacity（容量）仍小于最大容量
+                // 且旧的容量大于等于默认的初始容量（16）
+                // threshold为增加原来的2倍
                 newThr = oldThr << 1; // double threshold
         }
         else if (oldThr > 0) // initial capacity was placed in threshold
+            // 使用非默认构造方法创建的map，第一次插入元素会走到这里
+            // 如果旧容量为0且旧扩容门槛大于0，则把新容量赋值为旧扩容门槛
             newCap = oldThr;
         else {               // zero initial threshold signifies using defaults
             newCap = DEFAULT_INITIAL_CAPACITY;
             newThr = (int)(DEFAULT_LOAD_FACTOR * DEFAULT_INITIAL_CAPACITY);
         }
+        // 如果新的阀值等于0
         if (newThr == 0) {
             float ft = (float)newCap * loadFactor;
             newThr = (newCap < MAXIMUM_CAPACITY && ft < (float)MAXIMUM_CAPACITY ?
@@ -702,17 +740,26 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         threshold = newThr;
         @SuppressWarnings({"rawtypes","unchecked"})
             Node<K,V>[] newTab = (Node<K,V>[])new Node[newCap];
+        // 将桶赋值为新数组
         table = newTab;
+        // 如果旧数组不为空，则迁移元素
         if (oldTab != null) {
             for (int j = 0; j < oldCap; ++j) {
                 Node<K,V> e;
                 if ((e = oldTab[j]) != null) {
                     oldTab[j] = null;
                     if (e.next == null)
+                        // 如果只有一个元素，计算其在新桶中的位置并迁移到新桶中
                         newTab[e.hash & (newCap - 1)] = e;
                     else if (e instanceof TreeNode)
+                        // 如果该节点是一个树节点，则把这颗树打散成两颗树插入到新桶中去
                         ((TreeNode<K,V>)e).split(this, newTab, j, oldCap);
                     else { // preserve order
+                        // 如果这个链表不止一个元素且不是一颗树
+                        // 则分化成两个链表插入到新的桶中去
+                        // 比如，假如原来容量为4，3、7、11、15这四个元素都在三号桶中
+                        // 现在扩容到8，则3和11还是在三号桶，7和15要搬移到七号桶中去
+                        // 也就是分化成了两个链表
                         Node<K,V> loHead = null, loTail = null;
                         Node<K,V> hiHead = null, hiTail = null;
                         Node<K,V> next;
