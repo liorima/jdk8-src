@@ -584,11 +584,18 @@ public abstract class AbstractQueuedSynchronizer
         for (;;) {
             Node t = tail;
             if (t == null) { // Must initialize
+                // 尾节点为null，说明队列还没有初始化过
+                // new一个新节点，并将之CAS设置为头节点
                 if (compareAndSetHead(new Node()))
+                    // 设置成功，此时队列中只有一个节点，它既是头节点也是尾节点
                     tail = head;
+                    // 此时进入第二次for循环，将会跑else部分的代码
             } else {
+                // 将传入的节点的prev节点设置为原尾节点
                 node.prev = t;
+                // 将传入的节点CAS设置为尾节点
                 if (compareAndSetTail(t, node)) {
+                    // 设置成功，原尾节点的next节点设置为传入的节点
                     t.next = node;
                     return t;
                 }
@@ -603,17 +610,23 @@ public abstract class AbstractQueuedSynchronizer
      * @return the new node
      */
     private Node addWaiter(Node mode) {
+        // 将当前线程放到一个新的节点
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
         Node pred = tail;
         if (pred != null) {
+            // 如果尾节点不为空，则新节点的prev指向原尾节点
             node.prev = pred;
             if (compareAndSetTail(pred, node)) {
+                // CAS更新尾节点
+                // 如果更新成功，原尾节点的next节点指向新节点
                 pred.next = node;
                 return node;
             }
         }
+        // 如果尾节点为空，新节点直接插入等待队列
         enq(node);
+        // 返回新节点
         return node;
     }
 
@@ -859,6 +872,7 @@ public abstract class AbstractQueuedSynchronizer
         try {
             boolean interrupted = false;
             for (;;) {
+                // 获取前置节点
                 final Node p = node.predecessor();
                 if (p == head && tryAcquire(arg)) {
                     setHead(node);
@@ -1197,6 +1211,7 @@ public abstract class AbstractQueuedSynchronizer
     public final void acquire(int arg) {
         if (!tryAcquire(arg) &&
             acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            // 中断当前线程
             selfInterrupt();
     }
 
