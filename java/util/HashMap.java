@@ -570,14 +570,17 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      */
     final Node<K,V> getNode(int hash, Object key) {
         Node<K,V>[] tab; Node<K,V> first, e; int n; K k;
+        // table 有数据，且hash对应位置的值不为null
         if ((tab = table) != null && (n = tab.length) > 0 &&
             (first = tab[(n - 1) & hash]) != null) {
             if (first.hash == hash && // always check first node
                 ((k = first.key) == key || (key != null && key.equals(k))))
                 return first;
             if ((e = first.next) != null) {
+                // 如果是一个树节点，用getTreeNode取值
                 if (first instanceof TreeNode)
                     return ((TreeNode<K,V>)first).getTreeNode(hash, key);
+                // 遍历链表
                 do {
                     if (e.hash == hash &&
                         ((k = e.key) == key || (key != null && key.equals(k))))
@@ -613,7 +616,6 @@ public class HashMap<K,V> extends AbstractMap<K,V>
      *         previously associated <tt>null</tt> with <tt>key</tt>.)
      */
     public V put(K key, V value) {
-        //
         return putVal(hash(key), key, value, false, true);
     }
 
@@ -766,13 +768,18 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                         do {
                             next = e.next;
                             if ((e.hash & oldCap) == 0) {
+                                // 低位链表
                                 if (loTail == null)
+                                    // 链表中还没有元素，插入到头节点
                                     loHead = e;
                                 else
+                                    // 链表中已有元素，插入到尾节点的后面
                                     loTail.next = e;
+                                // 新的元素成为尾节点
                                 loTail = e;
                             }
                             else {
+                                // 高位链表
                                 if (hiTail == null)
                                     hiHead = e;
                                 else
@@ -802,8 +809,11 @@ public class HashMap<K,V> extends AbstractMap<K,V>
     final void treeifyBin(Node<K,V>[] tab, int hash) {
         int n, index; Node<K,V> e;
         if (tab == null || (n = tab.length) < MIN_TREEIFY_CAPACITY)
+            // table为空或者长度小于树化阀值
+            // 进行扩容
             resize();
         else if ((e = tab[index = (n - 1) & hash]) != null) {
+            // 通过 hash 计算存放位置，如果该位置不为空
             TreeNode<K,V> hd = null, tl = null;
             do {
                 TreeNode<K,V> p = replacementTreeNode(e, null);
@@ -815,6 +825,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                 }
                 tl = p;
             } while ((e = e.next) != null);
+            // 如果进入过上面的循环，从头节点开始树化
             if ((tab[index] = hd) != null)
                 hd.treeify(tab);
         }
@@ -863,6 +874,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         if ((tab = table) != null && (n = tab.length) > 0 &&
             (p = tab[index = (n - 1) & hash]) != null) {
             Node<K,V> node = null, e; K k; V v;
+            // 获取节点，并赋值给node
             if (p.hash == hash &&
                 ((k = p.key) == key || (key != null && key.equals(k))))
                 node = p;
@@ -881,11 +893,13 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                     } while ((e = e.next) != null);
                 }
             }
+            // node不为空且（matchValue为true或节点的value也相等）
             if (node != null && (!matchValue || (v = node.value) == value ||
                                  (value != null && value.equals(v)))) {
                 if (node instanceof TreeNode)
                     ((TreeNode<K,V>)node).removeTreeNode(this, tab, movable);
                 else if (node == p)
+                    // 节点是链表的最后一个节点
                     tab[index] = node.next;
                 else
                     p.next = node.next;

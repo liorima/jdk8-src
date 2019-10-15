@@ -1008,38 +1008,54 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
 
     /** Implementation for put and putIfAbsent */
     final V putVal(K key, V value, boolean onlyIfAbsent) {
+        // key和value都不能为空
         if (key == null || value == null) throw new NullPointerException();
+        // 计算hash值
         int hash = spread(key.hashCode());
         int binCount = 0;
         for (Node<K,V>[] tab = table;;) {
             Node<K,V> f; int n, i, fh;
             if (tab == null || (n = tab.length) == 0)
+                // table为空，初始化table
                 tab = initTable();
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
+                // 要插入的位置是空的
                 if (casTabAt(tab, i, null,
                              new Node<K,V>(hash, key, value, null)))
+                    // 使用CAS插入元素，成功则break跳出循环，成败则进入下一次循环
                     break;                   // no lock when adding to empty bin
             }
             else if ((fh = f.hash) == MOVED)
+                // 如果要插入的元素所在的桶的第一个元素的hash是MOVED，则当前线程帮忙一起迁移元素
                 tab = helpTransfer(tab, f);
             else {
+                // 如果这个桶不为空且不在迁移元素，则锁住这个桶（分段锁）
+                // 并查找要插入的元素是否在这个桶中
+                // 存在，则替换值（onlyIfAbsent=false）；不存在，则插入到链表结尾或插入树中
                 V oldVal = null;
                 synchronized (f) {
+                    // 双重校验思想，再次检测桶是否发生变化
                     if (tabAt(tab, i) == f) {
                         if (fh >= 0) {
+                            // 如果第一个元素的hash值大于等于0（说明不是在迁移，也不是树）
+                            // 即桶中的元素是以链表形式进行存储
+                            // 桶中元素数量赋值为1
                             binCount = 1;
+                            // 遍历链表
                             for (Node<K,V> e = f;; ++binCount) {
                                 K ek;
                                 if (e.hash == hash &&
                                     ((ek = e.key) == key ||
                                      (ek != null && key.equals(ek)))) {
                                     oldVal = e.val;
+                                    // 如果找到对应的值，替换旧值，跳出循环
                                     if (!onlyIfAbsent)
                                         e.val = value;
                                     break;
                                 }
                                 Node<K,V> pred = e;
                                 if ((e = e.next) == null) {
+                                    // 将元素插入到链表尾部，跳出循环
                                     pred.next = new Node<K,V>(hash, key,
                                                               value, null);
                                     break;
@@ -1047,10 +1063,15 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                             }
                         }
                         else if (f instanceof TreeBin) {
+                            // 桶中元素以树状结构存储
                             Node<K,V> p;
+                            // 桶中元素数量赋值为2
                             binCount = 2;
+                            // 调用红黑树的插入方法插入元素
+                            // 如果插入成功则返回null，否则返回找到的节点
                             if ((p = ((TreeBin<K,V>)f).putTreeVal(hash, key,
                                                            value)) != null) {
+                                // 如果找到了这个元素，替换旧值，跳出循环
                                 oldVal = p.val;
                                 if (!onlyIfAbsent)
                                     p.val = value;
@@ -1058,15 +1079,20 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         }
                     }
                 }
+
+                // binCount不为0说明已经成功插入
                 if (binCount != 0) {
+                    // 如果到了树化阀值，则树化
                     if (binCount >= TREEIFY_THRESHOLD)
                         treeifyBin(tab, i);
+                    // 如果存在旧值，返回旧值
                     if (oldVal != null)
                         return oldVal;
                     break;
                 }
             }
         }
+        // 成功插入元素，元素个数加1（是否要扩容也在这个里面）
         addCount(1L, binCount);
         return null;
     }

@@ -228,6 +228,8 @@ public class ArrayList<E> extends AbstractList<E>
     }
 
     private void ensureCapacityInternal(int minCapacity) {
+        // calculateCapacity 计算容量
+        // 确认明确的容量
         ensureExplicitCapacity(calculateCapacity(elementData, minCapacity));
     }
 
@@ -235,7 +237,9 @@ public class ArrayList<E> extends AbstractList<E>
         modCount++;
 
         // overflow-conscious code
+        // 如果需要的最小容量大于现有的数组长度，则进行扩容
         if (minCapacity - elementData.length > 0)
+            // 扩容
             grow(minCapacity);
     }
 
@@ -256,12 +260,17 @@ public class ArrayList<E> extends AbstractList<E>
     private void grow(int minCapacity) {
         // overflow-conscious code
         int oldCapacity = elementData.length;
+        // 新的容量扩容为原来的1.5倍
+        // >> 无符号右移1位，高位补0，相当于十进制中除以2
         int newCapacity = oldCapacity + (oldCapacity >> 1);
         if (newCapacity - minCapacity < 0)
+            // 扩容为原来的1.5倍后仍小于minCapacity，新容量设置为minCapacity
             newCapacity = minCapacity;
         if (newCapacity - MAX_ARRAY_SIZE > 0)
+            // 新容量大于数组最大长度，使用最大容量
             newCapacity = hugeCapacity(minCapacity);
         // minCapacity is usually close to size, so this is a win:
+        // 以新容量拷贝一个新数组
         elementData = Arrays.copyOf(elementData, newCapacity);
     }
 
@@ -459,7 +468,9 @@ public class ArrayList<E> extends AbstractList<E>
      * @return <tt>true</tt> (as specified by {@link Collection#add})
      */
     public boolean add(E e) {
+        // 检测是否需要扩容，需要则扩容
         ensureCapacityInternal(size + 1);  // Increments modCount!!
+        // 将元素添加到数组的最后
         elementData[size++] = e;
         return true;
     }
@@ -474,11 +485,14 @@ public class ArrayList<E> extends AbstractList<E>
      * @throws IndexOutOfBoundsException {@inheritDoc}
      */
     public void add(int index, E element) {
+        // 检测index是否合法（>size或<0）
         rangeCheckForAdd(index);
 
         ensureCapacityInternal(size + 1);  // Increments modCount!!
+        // 将inex及其之后的元素往后挪一位，则index位置处就空出来了
         System.arraycopy(elementData, index, elementData, index + 1,
                          size - index);
+        // 将元素插入到index的位置
         elementData[index] = element;
         size++;
     }
