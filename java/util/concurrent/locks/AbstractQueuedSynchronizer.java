@@ -874,6 +874,8 @@ public abstract class AbstractQueuedSynchronizer
             for (;;) {
                 // 获取前置节点
                 final Node p = node.predecessor();
+                // 当前线程的前驱节点是头结点，且同步状态成功
+                // 如果tryAcquire为true，说明原来的头节点已经释放，更新当前节点为头节点
                 if (p == head && tryAcquire(arg)) {
                     setHead(node);
                     p.next = null; // help GC
@@ -929,6 +931,7 @@ public abstract class AbstractQueuedSynchronizer
         if (nanosTimeout <= 0L)
             return false;
         final long deadline = System.nanoTime() + nanosTimeout;
+        // 以独占模式将线程添加到等待队列
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
         try {
@@ -1087,6 +1090,7 @@ public abstract class AbstractQueuedSynchronizer
      * @throws UnsupportedOperationException if exclusive mode is not supported
      */
     protected boolean tryAcquire(int arg) {
+        // 可以被实现的方法，比如ReentrantLock中的NonfairSync和fairSync都实现了这个方法
         throw new UnsupportedOperationException();
     }
 
