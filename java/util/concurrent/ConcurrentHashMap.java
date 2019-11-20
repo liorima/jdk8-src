@@ -2422,6 +2422,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      */
     private final void transfer(Node<K,V>[] tab, Node<K,V>[] nextTab) {
         int n = tab.length, stride;
+        // 如果CPU数大于1，计算每个线程迁移的数量，并赋值给stride
+        // 如果stride<MIN_TRANSFER_STRIDE，则stride = MIN_TRANSFER_STRIDE
         if ((stride = (NCPU > 1) ? (n >>> 3) / NCPU : n) < MIN_TRANSFER_STRIDE)
             stride = MIN_TRANSFER_STRIDE; // subdivide range
         // nextTal为null，执行初始化（扩容为原来的2倍）
@@ -2449,22 +2451,15 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             // 同时，每个线程都会进入这里取得自己需要转移的桶的区间
             while (advance) {
                 int nextIndex, nextBound;
-                // 对i减一，判断是否大于等于bound
-                // 正常情况下，如果大于bound不成立，说明该线程上次领取的任务已经完成了，需要在下面继续领取任务
-                // 如果对i减一大于等于 bound（还需要继续做任务），或者完成了，修改推进状态为 false，不能推进了
-                // 任务成功后修改推进状态为true
-                // 通常，第一次进入循环，--i这个判断会无法通过，从而走下面的 nextIndex 赋值操作（获取最新的转移下标）。
-                // 其余情况都是：如果可以推进，将i减一，然后修改成不可推进
-                // 如果i对应的桶处理成功了，改成可以推进
+                // 对i减一，判断i是否大于等于bound，或者finishing为true
+                // 第一次进入时，i和bound都是0，--i>=bound一定是不成立的，而finishing初始值是false，所以一定走else
+                // 如果成立，advance = false，退出while循环
                 if (--i >= bound || finishing)
                     advance = false;
                 else if ((nextIndex = transferIndex) <= 0) {
-                    // transferIndex是原table的长度，这里的判断将transferIndex赋值给了nextIndex
-                    // 这里的目的是：
-                    // 1. 当一个线程进入时，会选取最新的转移下标
-                    // 2. 当一个线程处理完自己的区间时，如果还有剩余区间的没有别的线程处理，再次获取区间
-                    // 如果小于等于0，说明没有区间了 ，i改成-1，推进状态变成false，不再推进，扩容结束了，当前线程可以退出了
-                    // 这个-1会在下面的if块里判断，从而进入完成状态判断
+                    // 开始时，transferIndex是原table的长度，这里的判断将transferIndex赋值给了nextIndex。后面取区间时，会更新transferIndex
+                    // 如果nextIndex<=0，说明已经没有待处理区间了
+                    // 这个-1会在下面的if块里用到，从而进入完成状态判断
                     i = -1;
                     advance = false;
                 }
@@ -2472,21 +2467,27 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                          (this, TRANSFERINDEX, nextIndex,
                           nextBound = (nextIndex > stride ?
                                        nextIndex - stride : 0))) {
-                    // 确定当前线程每次分配的待迁移桶的范围[bound, nextIndex-1]，这里是从右向左处理
+                    // 更新transferIndex为nextBound
+                    // 如果nextIndex>stride，即一个线程处理不完，则nextBound=nextIndex-stride，否则nextBound=0
+                    // 这块代码主要是确定当前线程每次分配的待迁移桶的范围[bound, nextIndex-1]（从右向左处理）
                     bound = nextBound;
                     // 初次对i赋值，这个就是当前线程可以处理的当前区间的最大下标
                     i = nextIndex - 1;
                     advance = false;
                 }
             }
+            // 如果i<0或者i>=旧数组长度或者i+旧数组长度>=新数组长度
             if (i < 0 || i >= n || i + n >= nextn) {
                 int sc;
+                // 如果迁移结束，迁移后的数组替换旧的数组，计算新的sizeCtl（0.75n），并直接返回
                 if (finishing) {
                     nextTable = null;
                     table = nextTab;
                     sizeCtl = (n << 1) - (n >>> 1);
                     return;
                 }
+                // 到这里说明finishing=false
+                // CAS更新sizeCtl，sc - 1表示多了一条线程参与迁移
                 if (U.compareAndSwapInt(this, SIZECTL, sc = sizeCtl, sc - 1)) {
                     if ((sc - 2) != resizeStamp(n) << RESIZE_STAMP_SHIFT)
                         return;
@@ -2496,13 +2497,13 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             }
             // 获取原tab中下标为i的变量，如果是null，就使用fwd占位。
             else if ((f = tabAt(tab, i)) == null)
-                // fwd占位成功，再次推进一个下标
+                // fwd占位成功，进入下一次while循环，再次推进一个下标（--i）
                 advance = casTabAt(tab, i, null, fwd);
             else if ((fh = f.hash) == MOVED)
                 // 如果不是null且hash值是MOVED
                 advance = true; // already processed
             else {
-                // 到这里，说明这个位置有实际值了，且不是占位符。对这个节点上锁。为什么上锁，防止 putVal 的时候向链表插入数据
+                // 到这里，说明这个位置有实际值了，且不是占位符，则对这个节点上锁，防止putVal的时候向链表插入数据
                 synchronized (f) {
                     if (tabAt(tab, i) == f) {
                         Node<K,V> ln, hn;
@@ -2510,53 +2511,52 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         if (fh >= 0) {
                             // 取模计算新的存放位置
                             int runBit = fh & n;
+                            // lastRun初始化当前要迁移的节点，后面会被更新为最后一个位置发生变化的节点
                             Node<K,V> lastRun = f;
-                            // lastRun 表示的是需要复制的最后一个节点
-                            // 每当新节点的hash&n -> b 发生变化的时候，就把runBit设置为这个结果b
-                            // 这样for循环之后，runBit的值就是最后不变的hash&n的值
-                            // 而lastRun的值就是最后一次导致hash&n 发生变化的节点(假设为p节点)
-                            // 为什么要这么做呢？因为p节点后面的节点的hash&n 值跟p节点是一样的，
-                            // 所以在复制到新的table的时候，它肯定还是跟p节点在同一个位置
-                            // 在复制完p节点之后，p节点的next节点还是指向它原来的节点，就不需要进行复制了，自己就被带过去了
-                            // 这也就导致了一个问题就是复制后的链表的顺序并不一定是原来的倒序
+                            // 如果当前要迁移的节点f是一个链表，for循环迁移
                             for (Node<K,V> p = f.next; p != null; p = p.next) {
                                 int b = p.hash & n;
+                                // 如果新节点的位置发生变化，将新的位置赋值给runBit
+                                // 这样for循环之后，runBit的值就是最后不变的hash&n的值
+                                // 而lastRun的值就是最后一次导致新节点位置发生变化的节点(假设为p节点)
+                                // 这样做的目的是，p节点后面的节点的位置（hash&n值）跟p节点是一样的
+                                // 所以在迁移到新的table后，它肯定还是跟p节点在同一个位置
+                                // 在复制完p节点之后，p节点的next节点还是指向它原来的节点，就不需要进行复制了，自己就被带过去了
+                                // 不过这也导致了一个问题就是复制后的链表的顺序并不一定是原来的倒序
                                 if (b != runBit) {
                                     runBit = b;
                                     lastRun = p;
                                 }
                             }
                             if (runBit == 0) {
+                                // 如果最后更新的 runBit 是 0 ，设置低位节点
                                 ln = lastRun;
                                 hn = null;
                             }
                             else {
+                                // 如果最后更新的 runBit 是 1， 设置高位节点
                                 hn = lastRun;
                                 ln = null;
                             }
-                            /*
-                             * 构造两个链表，顺序大部分和原来是反的
-                             * 分别放到原来的位置和新增加的长度的相同位置(i/n+i)
-                             */
+                            // 再次循环，生成两个链表，lastRun 作为停止条件，这样就是避免无谓的循环（lastRun 后面都是相同的取于结果）
+                            // 构造两个链表，顺序大部分和原来是反的
+                            // 分别放到原来的位置和新增加的长度的相同位置(i/n+i)
+                            // 这步在HashMap中也有，将原链表打散成两个链表
                             for (Node<K,V> p = f; p != lastRun; p = p.next) {
                                 int ph = p.hash; K pk = p.key; V pv = p.val;
                                 if ((ph & n) == 0)
-                                    /*
-                                     * 假设runBit的值为0，
-                                     * 则第一次进入这个设置的时候相当于把旧的序列的最后一次发生hash变化的节点(该节点后面可能还有hash计算后同为0的节点)设置到旧的table的第一个hash计算后为0的节点下一个节点
-                                     * 并且把自己返回，然后在下次进来的时候把它自己设置为后面节点的下一个节点
-                                     */
+                                    // 如果与运算结果是 0，那么就还在低位
+                                    // 如果是0 ，那么创建低位节点
                                     ln = new Node<K,V>(ph, pk, pv, ln);
                                 else
-                                    /*
-                                     * 假设runBit的值不为0，
-                                     * 则第一次进入这个设置的时候相当于把旧的序列的最后一次发生hash变化的节点(该节点后面可能还有hash计算后同不为0的节点)设置到旧的table的第一个hash计算后不为0的节点下一个节点
-                                     * 并且把自己返回，然后在下次进来的时候把它自己设置为后面节点的下一个节点
-                                     */
                                     hn = new Node<K,V>(ph, pk, pv, hn);
                             }
+                            // 其实这里类似 hashMap
+                            // 设置低位链表放在新链表的 i
                             setTabAt(nextTab, i, ln);
+                            // 设置高位链表，在原有长度上加 n
                             setTabAt(nextTab, i + n, hn);
+                            // 将旧的链表设置成占位符
                             setTabAt(tab, i, fwd);
                             advance = true;
                         }
@@ -2587,7 +2587,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 }
                             }
                              // 在复制完树节点之后，判断该节点处构成的树还有几个节点，
-                             // 如果≤6个的话，就转回为一个链表
+                             // 如果<=6个的话，就转回为一个链表
                             ln = (lc <= UNTREEIFY_THRESHOLD) ? untreeify(lo) :
                                 (hc != 0) ? new TreeBin<K,V>(lo) : t;
                             hn = (hc <= UNTREEIFY_THRESHOLD) ? untreeify(hi) :
