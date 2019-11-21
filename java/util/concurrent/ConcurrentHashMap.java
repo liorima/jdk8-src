@@ -1020,7 +1020,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 // table为空，初始化table
                 tab = initTable();
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
-                // 要插入的位置是空的
+                // 要插入的位置为null
                 // 使用CAS插入元素，成功则break跳出循环，失败则进入下一次循环
                 if (casTabAt(tab, i, null,
                              new Node<K,V>(hash, key, value, null)))
@@ -2509,7 +2509,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         Node<K,V> ln, hn;
                         // 该节点的hash值大于等于0，说明是一个Node节点
                         if (fh >= 0) {
-                            // 取模计算新的存放位置
+                            // 因为n一定是2的幂，所以这里进行与运算的结果只会有0或1两种情况
                             int runBit = fh & n;
                             // lastRun初始化当前要迁移的节点，后面会被更新为最后一个位置发生变化的节点
                             Node<K,V> lastRun = f;
@@ -2529,38 +2529,39 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 }
                             }
                             if (runBit == 0) {
-                                // 如果最后更新的 runBit 是 0 ，设置低位节点
+                                // 如果最后更新的runBit是0，设置低位节点
                                 ln = lastRun;
                                 hn = null;
                             }
                             else {
-                                // 如果最后更新的 runBit 是 1， 设置高位节点
+                                // 如果最后更新的runBit是1，设置高位节点
                                 hn = lastRun;
                                 ln = null;
                             }
-                            // 再次循环，生成两个链表，lastRun 作为停止条件，这样就是避免无谓的循环（lastRun 后面都是相同的取于结果）
+                            // 再次循环，生成两个链表，lastRun作为停止条件，这样就是避免无谓的循环（lastRun 后面都是相同的取于结果）
                             // 构造两个链表，顺序大部分和原来是反的
                             // 分别放到原来的位置和新增加的长度的相同位置(i/n+i)
                             // 这步在HashMap中也有，将原链表打散成两个链表
                             for (Node<K,V> p = f; p != lastRun; p = p.next) {
                                 int ph = p.hash; K pk = p.key; V pv = p.val;
                                 if ((ph & n) == 0)
-                                    // 如果与运算结果是 0，那么就还在低位
-                                    // 如果是0 ，那么创建低位节点
+                                    // 如果是0，创建低位节点，并赋值给ln（低位链表）
+                                    // 这里组成的新链表，并不完全是原来的反序，因为lastRun可以带着多个节点
                                     ln = new Node<K,V>(ph, pk, pv, ln);
                                 else
+                                    // 否则，创建高位节点，并赋值给hn（高位链表）
                                     hn = new Node<K,V>(ph, pk, pv, hn);
                             }
-                            // 其实这里类似 hashMap
-                            // 设置低位链表放在新链表的 i
+                            // 设置低位链表放在新数组的i位置
                             setTabAt(nextTab, i, ln);
-                            // 设置高位链表，在原有长度上加 n
+                            // 设置高位链表，在原有长度上加n，和HashMap的做法其实是一样的
                             setTabAt(nextTab, i + n, hn);
-                            // 将旧的链表设置成占位符
+                            // 将旧数组设置成占位符
                             setTabAt(tab, i, fwd);
                             advance = true;
                         }
                         else if (f instanceof TreeBin) {
+                            // 如果是一个树节点
                             TreeBin<K,V> t = (TreeBin<K,V>)f;
                             TreeNode<K,V> lo = null, loTail = null;
                             TreeNode<K,V> hi = null, hiTail = null;
@@ -2587,7 +2588,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 }
                             }
                              // 在复制完树节点之后，判断该节点处构成的树还有几个节点，
-                             // 如果<=6个的话，就转回为一个链表
+                             // 如果小于或等于6个，就转回为一个链表
                             ln = (lc <= UNTREEIFY_THRESHOLD) ? untreeify(lo) :
                                 (hc != 0) ? new TreeBin<K,V>(lo) : t;
                             hn = (hc <= UNTREEIFY_THRESHOLD) ? untreeify(hi) :
