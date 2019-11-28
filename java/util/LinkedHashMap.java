@@ -296,6 +296,9 @@ public class LinkedHashMap<K,V>
 
     void afterNodeInsertion(boolean evict) { // possibly remove eldest
         LinkedHashMap.Entry<K,V> first;
+        // LinkedHashMap是继承自HashMap的，在HashMap中，put()方法中的evict恒为true
+        // 如果已有头节点且需要从map中移除最旧的数据
+        // LinkedHashMap的removeEldestEntry()恒返回false，即不会从map中移除最旧的数据
         if (evict && (first = head) != null && removeEldestEntry(first)) {
             K key = first.key;
             removeNode(hash(key), key, null, false, true);
@@ -304,6 +307,8 @@ public class LinkedHashMap<K,V>
 
     void afterNodeAccess(Node<K,V> e) { // move node to last
         LinkedHashMap.Entry<K,V> last;
+        // accessOrder默认是false，在构造函数中，可以传入accessOrder，将之修改为true
+        // 如果accessOrder=true且访问节点不是尾节点，则将访问节点置于队列尾部，modCount+1
         if (accessOrder && (last = tail) != e) {
             LinkedHashMap.Entry<K,V> p =
                 (LinkedHashMap.Entry<K,V>)e, b = p.before, a = p.after;

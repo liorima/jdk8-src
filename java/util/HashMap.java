@@ -638,6 +638,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
         // (n - 1) & hash 计算元素在哪个桶中
         // 如果这个桶中还没有元素，则将这个元素放在桶中的第一个位置
         if ((p = tab[i = (n - 1) & hash]) == null)
+            // 如果是LinkedHashMap，这里的newNode则是LinkedHashMap中重写的newNode方法，在这个方法中会额外维护一个双向队列
             tab[i] = newNode(hash, key, value, null);
         else {
             Node<K,V> e; K k;
