@@ -220,6 +220,8 @@ public class LinkedHashMap<K,V>
 
     // link at the end of list
     private void linkNodeLast(LinkedHashMap.Entry<K,V> p) {
+        // 使用双向链表，空间换时间
+        // 双向链表虽然比单向链表耗费内存，但效率更高
         LinkedHashMap.Entry<K,V> last = tail;
         tail = p;
         if (last == null)
